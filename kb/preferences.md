@@ -1,0 +1,3 @@
+- Style: step-by-step, explicit, Géron-style code; metric units; concise but thorough.
+- DL: Sequential API; custom Matplotlib plots with clear legends, early stopping, confusion matrices.
+- Practical, friendly tone with occasional light film/music references.

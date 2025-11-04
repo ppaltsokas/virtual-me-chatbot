@@ -1,0 +1,4 @@
+- GitHub: github.com/ppaltsokas
+- LinkedIn: linkedin.com/in/ppaltsokas/
+- HF Spaces: GAIA agent experiments; RAG demos
+- Cloud Run experiments for API demos

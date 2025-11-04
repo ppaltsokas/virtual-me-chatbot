@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Panos Paltsokas — Chat</title>
+  <meta name="description" content="Chat with Panagiotis Paltsokas — RLHF & Data Science. Ask about experience, projects, and career advice.">
+  <meta property="og:title" content="Panagiotis Paltsokas — Chat" />
+  <meta property="og:description" content="RLHF specialist & Data Scientist. Chat with me about experience and projects." />
+  <meta property="og:image" content="https://lh3.googleusercontent.com/a/ACg8ocL60jE77fOfZulQLFAZYYjj4SKDhy0HpK4e1kWXDvsyBjS0IPFv=s288-c-no" />
+  <link rel="icon" href="/static/favicon.ico" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --accent: #f59e0b; --accent-2: #fb923c; }
+    html { scroll-behavior: smooth; }
+    body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; font-size: 0.875rem;}
+    .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .linkfx { border-bottom: 1px solid transparent; }
+    .linkfx:hover { border-bottom-color: var(--accent); }
+    .shadow-header { box-shadow: 0 1px 0 0 rgba(255,255,255,0.04); }
+    #chat-container { max-width: 72rem; }           /* 1152px on large screens */
+    @media (min-width:1536px){ #chat-container{ max-width: 80rem; } } /* 1280px on 2K+ */
+  </style>
+</head>
+<body class="bg-neutral-950 text-neutral-100">
+  <a href="#message" class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 bg-black text-white px-3 py-1 rounded">Skip to chat</a>
+
+  <header id="site-header" class="h-16 border-b border-neutral-800/80 bg-black/60 backdrop-blur sticky top-0 z-40 transition-shadow">
+    <div class="max-w-6xl mx-auto h-full px-4 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <img src="https://lh3.googleusercontent.com/a/ACg8ocL60jE77fOfZulQLFAZYYjj4SKDhy0HpK4e1kWXDvsyBjS0IPFv=s288-c-no"
+             alt="Panagiotis Paltsokas"
+             class="w-10 h-10 rounded-full object-cover ring-2 ring-neutral-800" />
+        <span class="font-semibold tracking-tight text-base">Panagiotis Paltsokas</span>
+      </div>
+      <nav class="flex items-center gap-6 text-sm">
+        <a href="#about" class="linkfx hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] rounded-sm px-1">About</a>
+        <a href="https://www.linkedin.com/in/ppaltsokas/" target="_blank" rel="noopener" class="linkfx hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] rounded-sm px-1">LinkedIn</a>
+        <a href="https://github.com/ppaltsokas" target="_blank" rel="noopener" class="linkfx hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] rounded-sm px-1">GitHub</a>
+        <a href="#contact" id="open-contact" class="linkfx hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] rounded-sm px-1">Contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="chat-container" class="max-w-4xl xl:max-w-5xl mx-auto px-6 pt-24 pb-12">
+    <!-- Replies container (scrollable, newest at bottom) -->
+    <section id="transcript" role="log" aria-live="polite" class="mt-6 space-y-4 h-[65vh] overflow-y-auto">
+      <!-- Entries appended here -->
+    </section>
+    
+<!-- Prompt chips ABOVE the input -->
+<div class="mt-6 mb-2">
+  <div class="flex items-center justify-between gap-3">
+    <!-- Chips (left) -->
+    <div class="flex flex-wrap gap-2">
+      <button data-q="Tell me in detail about a project or assignement you worked on your studies. If you have already told me about a project, tell me about another one. Always be very detailed and use technical terms. Do not make up projects, use only content from my assignments in the /kb foler"
+              class="px-3 py-1.5 text-xs border border-neutral-800 rounded-lg hover:border-amber-500 hover:text-amber-400">
+        Hit me to talk about a project
+      </button>
+      <button data-q="Can you tell me about your career journey and how you transitioned into Data Science and AI?"
+              class="px-3 py-1.5 text-xs border border-neutral-800 rounded-lg hover:border-amber-500 hover:text-amber-400">
+        Career journey
+      </button>
+      <button data-q="What are some of the key projects you've worked on in AI Operations and Reinforcement Learning?"
+              class="px-3 py-1.5 text-xs border border-neutral-800 rounded-lg hover:border-amber-500 hover:text-amber-400">
+        Key Projects in AI
+      </button>
+      <button data-q="What are the main skills you bring to the table as an AI/ML practitioner and RLHF specialist?"
+              class="px-3 py-1.5 text-xs border border-neutral-800 rounded-lg hover:border-amber-500 hover:text-amber-400">
+        Main Skills
+      </button>
+    </div>
+
+    <!-- Clear chat (right) -->
+    <button id="clear-chat"
+            class="px-3 py-1.5 text-xs rounded-lg border border-red-900/60 bg-red-900/20 hover:bg-red-900/30">
+      Clear chat
+    </button>
+  </div>
+</div>
+
+<!-- Sticky composer row: title on left, input on right -->
+<div class="mt-3 sticky bottom-0 bg-neutral-950/80 backdrop-blur border-t border-neutral-800 pt-3 pb-3 z-10">
+  <div class="flex items-center gap-4">
+    <h1 class="text-xl font-bold shrink-0">Chat with me</h1>
+
+    <form id="chat-form" class="relative flex-1">
+      <label for="message" class="sr-only">Your message</label>
+      <input
+        id="message"
+        name="message"
+        type="text"
+        required
+        autocomplete="off"
+        placeholder="Ask me about my experience, projects, or career advice…"
+        class="w-full h-12 rounded-xl bg-neutral-900 border border-neutral-800 px-4 pr-12 outline-none focus:ring-2 focus:ring-[var(--accent)] shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
+      />
+      <!-- Arrow perfectly aligned to the far right, vertically centered -->
+      <button
+        type="submit"
+        aria-label="Send"
+        title="Send"
+        class="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 grid place-items-center rounded-lg border border-neutral-800 bg-neutral-900 hover:border-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+      >
+        ➤
+      </button>
+    </form>
+  </div>
+</div>
+
+
+  </main>
+
+  <footer class="py-8 border-t border-neutral-800 text-center text-xs text-neutral-500">© <span id="year"></span> Panagiotis Paltsokas</footer>
+
+  <!-- Contact Modal -->
+  <div id="contact-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/70" data-close></div>
+    <div class="relative max-w-md mx-auto mt-24 rounded-2xl border border-neutral-800 bg-neutral-950 shadow-xl p-6">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Contact Panagiotis</h3>
+        <button class="text-neutral-400 hover:text-neutral-200" data-close>✕</button>
+      </div>
+      <p class="text-neutral-400 text-sm mt-1">This form opens your email app with the details pre-filled to <span class="text-[var(--accent-2)]">ppaltsokas@gmail.com</span>.</p>
+      <form id="contact-form" class="mt-4 grid gap-3">
+        <input name="name" placeholder="Your name" required class="rounded-lg bg-neutral-900 border border-neutral-800 px-4 py-2">
+        <input type="email" name="email" placeholder="Your email" required class="rounded-lg bg-neutral-900 border border-neutral-800 px-4 py-2">
+        <input name="subject" placeholder="Subject" required class="rounded-lg bg-neutral-900 border border-neutral-800 px-4 py-2">
+        <textarea name="message" rows="5" placeholder="Message" required class="rounded-lg bg-neutral-900 border border-neutral-800 px-4 py-2"></textarea>
+        <button class="rounded-lg bg-[var(--accent)] hover:bg-amber-400 text-black font-semibold px-4 py-2">Open Email</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Year & header shadow on scroll
+    document.getElementById('year').textContent = new Date().getFullYear();
+    const header = document.getElementById('site-header');
+    const onScroll = () => header.classList.toggle('shadow-header', window.scrollY > 0);
+    onScroll();
+    window.addEventListener('scroll', onScroll);
+
+    // Elements
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('message');
+    const transcript = document.getElementById('transcript');
+    const clearBtn = document.getElementById('clear-chat');
+
+    // Local history helpers
+    const STORAGE_KEY = 'panos_chat_history_v1';
+    function loadHistory(){
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+    }
+    function saveHistory(items){ localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(-10))); }
+
+    function formatTime(d){
+      const pad = n => String(n).padStart(2,'0');
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    // Avatars
+    function avatarHTML(role){
+      if (role === 'assistant') {
+        return `
+          <img src="https://lh3.googleusercontent.com/a/ACg8ocL60jE77fOfZulQLFAZYYjj4SKDhy0HpK4e1kWXDvsyBjS0IPFv=s288-c-no"
+               alt="Panos"
+               class="w-8 h-8 rounded-full object-cover ring-2 ring-neutral-800" />
+        `;
+      }
+      return `
+        <div class="w-8 h-8 rounded-full grid place-items-center bg-[var(--accent)] text-black text-[10px] font-extrabold select-none">
+          YOU
+        </div>
+      `;
+    }
+    function roleName(role){ return role === 'assistant' ? 'Panagiotis' : role; }
+
+    // Message card with avatar
+    function card(role, text, time, errorOpts){
+      const wrapper = document.createElement('div');
+      const leftAccent = role === 'assistant' ? 'border-l-2 border-l-amber-500' : '';
+      wrapper.className = `rounded-xl border border-neutral-800 bg-neutral-900 p-4 ${leftAccent}`;
+
+      wrapper.innerHTML = `
+        <div class="flex items-start gap-3">
+          <div class="shrink-0">${avatarHTML(role)}</div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between mb-1">
+              <div class="text-[11px] uppercase tracking-wider ${role === 'assistant' ? 'text-neutral-400' : 'text-[var(--accent-2)]'}">${roleName(role)}</div>
+              <div class="text-[11px] text-neutral-500 ml-auto">${time}</div>
+            </div>
+            <div class="mono leading-[1.4] whitespace-pre-wrap break-words">${text.replace(/</g,'&lt;')}</div>
+            <button 
+              class="copy-message-btn mt-2 text-xs px-2 py-1 rounded-lg border border-neutral-800 hover:border-amber-500 hover:text-amber-400 hover:bg-neutral-800/50 transition-colors flex items-center gap-1.5"
+              title="Copy message to clipboard"
+              aria-label="Copy message to clipboard"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+              </svg>
+              <span>Copy</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      // Add copy functionality
+      const copyBtn = wrapper.querySelector('.copy-message-btn');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          try {
+            await navigator.clipboard.writeText(text);
+            // Visual feedback
+            const originalHTML = copyBtn.innerHTML;
+            copyBtn.innerHTML = `
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+              <span>Copied!</span>
+            `;
+            copyBtn.classList.add('border-green-500', 'text-green-400');
+            copyBtn.classList.remove('border-neutral-800', 'hover:border-amber-500', 'hover:text-amber-400');
+            
+            // Reset after 2 seconds
+            setTimeout(() => {
+              copyBtn.innerHTML = originalHTML;
+              copyBtn.classList.remove('border-green-500', 'text-green-400');
+              copyBtn.classList.add('border-neutral-800', 'hover:border-amber-500', 'hover:text-amber-400');
+            }, 2000);
+          } catch (err) {
+            console.error('Failed to copy:', err);
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+              document.execCommand('copy');
+              copyBtn.innerHTML = `
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span>Copied!</span>
+              `;
+              setTimeout(() => {
+                copyBtn.innerHTML = originalHTML;
+              }, 2000);
+            } catch (fallbackErr) {
+              alert('Failed to copy. Please select and copy manually.');
+            }
+            document.body.removeChild(textArea);
+          }
+        });
+      }
+
+      if (errorOpts && errorOpts.retryText) {
+        const btn = document.createElement('button');
+        btn.className = 'mt-2 text-xs px-3 py-1.5 rounded-lg border border-neutral-800 hover:border-amber-500 hover:text-amber-400';
+        btn.textContent = 'Try again';
+        btn.addEventListener('click', () => sendMessage(errorOpts.retryText, true));
+        wrapper.appendChild(btn);
+      }
+      return wrapper;
+    }
+
+    function scrollToBottom() {
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+
+    function appendEntry(role, text){
+      const time = formatTime(new Date());
+      transcript.appendChild(card(role, text, time));
+      const items = loadHistory();
+      items.push({ role, text, time });
+      saveHistory(items);
+      scrollToBottom();
+    }
+
+    // Load history oldest -> newest
+    loadHistory().forEach(({role, text, time}) => {
+      transcript.appendChild(card(role, text, time));
+    });
+    scrollToBottom();
+
+    async function sendMessage(msg, isRetry=false){
+      if (!isRetry) appendEntry('you', msg);
+
+      const thinkingTime = formatTime(new Date());
+      const loader = card('assistant', 'Typing…', thinkingTime);
+      transcript.appendChild(loader);
+      scrollToBottom();
+
+      input.value = '';
+      input.disabled = true;
+
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const reply = (data && (data.reply || data.answer || data.output)) || 'No reply field found.';
+
+        const time = formatTime(new Date());
+        const finalCard = card('assistant', reply, time);
+        loader.replaceWith(finalCard);
+
+        const items = loadHistory();
+        items.push({ role: 'assistant', text: reply, time });
+        saveHistory(items);
+        scrollToBottom();
+      } catch (err) {
+        const time = formatTime(new Date());
+        const errorCard = card('assistant', 'Error contacting server: ' + err.message, time, { retryText: msg });
+        loader.replaceWith(errorCard);
+        scrollToBottom();
+      } finally {
+        input.disabled = false;
+        input.focus();
+      }
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const msg = input.value.trim();
+      if (msg) sendMessage(msg);
+    });
+
+    // Chips: paste into input and submit immediately
+    document.querySelectorAll('[data-q]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const text = btn.getAttribute('data-q');
+        input.value = text;
+        input.focus();
+        form.dispatchEvent(new Event('submit', { cancelable: true }));
+      });
+    });
+
+    // Clear chat
+    clearBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!confirm('Clear the chat history on this device?')) return;
+      localStorage.removeItem(STORAGE_KEY);
+      transcript.innerHTML = '';
+    });
+
+    // Contact modal (mailto)
+    const modal = document.getElementById('contact-modal');
+    const openBtn = document.getElementById('open-contact');
+    const closeEls = modal ? modal.querySelectorAll('[data-close]') : [];
+    openBtn && openBtn.addEventListener('click', (e) => { e.preventDefault(); modal.classList.remove('hidden'); });
+    closeEls.forEach(el => el.addEventListener('click', () => modal.classList.add('hidden')));
+
+    const cform = document.getElementById('contact-form');
+    cform && cform.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const formData = new FormData(cform);
+      const name = encodeURIComponent(formData.get('name'));
+      const email = encodeURIComponent(formData.get('email'));
+      const subject = encodeURIComponent(formData.get('subject'));
+      const message = encodeURIComponent(formData.get('message'));
+      const body = `${decodeURIComponent(message)}%0A%0A— ${decodeURIComponent(name)} (reply: ${decodeURIComponent(email)})`;
+      const mailto = `mailto:ppaltsokas@gmail.com?subject=${subject}&body=${body}`;
+      window.location.href = mailto;
+      modal.classList.add('hidden');
+      cform.reset();
+    });
+  </script>
+</body>
+</html>
