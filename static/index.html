@@ -24,6 +24,15 @@
     .shadow-header { box-shadow: 0 1px 0 0 rgba(255,255,255,0.04); }
     #chat-container { max-width: 72rem; }           /* 1152px on large screens */
     @media (min-width:1536px){ #chat-container{ max-width: 80rem; } } /* 1280px on 2K+ */
+    #toast-guy {
+      position: fixed;
+      bottom: -180px;
+      right: 20px;
+      width: 160px;
+      transition: bottom 0.4s ease-out;
+      z-index: 1000;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body class="bg-neutral-950 text-neutral-100">
@@ -57,21 +66,21 @@
   <div class="flex items-center justify-between gap-3">
     <!-- Chips (left) -->
     <div class="flex flex-wrap gap-2">
-      <button data-q="Tell me in detail about a project or assignement you worked on your studies. If you have already told me about a project, tell me about another one. Always be very detailed and use technical terms. Do not make up projects, use only content from my assignments in the /kb foler"
+      <button data-q="Tell me in detail about an end-to-end ML project or assignment you worked on your studies. If you have already told me about a project, tell me about another one. Always be very detailed and don't refrain from using technical terms. Do not make up projects, use only content from my assignments in the /kb/End_to_end_ML_projects/ folder. Describe methodologies, reasoning and insights gained."
               class="px-3 py-1.5 text-xs border border-neutral-800 rounded-lg hover:border-amber-500 hover:text-amber-400">
-        Hit me to talk about a project
+        End-to-end ML projects.
       </button>
-      <button data-q="Can you tell me about your career journey and how you transitioned into Data Science and AI?"
+      <button data-q="Tell me in detail about a ML assignment you worked on your studies that was more focused on the math aspect of the algorithms and techniques. If you have already told me about an assignment, tell me about another one. Always be very detailed and don't refrain from using technical terms. Do not make up assignments, use only content from my assignments in the /kb/ML_Theory_Practice/ folder."
               class="px-3 py-1.5 text-xs border border-neutral-800 rounded-lg hover:border-amber-500 hover:text-amber-400">
-        Career journey
+        ML Theory Practice
       </button>
-      <button data-q="What are some of the key projects you've worked on in AI Operations and Reinforcement Learning?"
+      <button data-q="Tell me in detail about an assignment you worked on your studies that involved Mathematics for Machine Learning (Linear Algebra, Probabilities, Statistics). If you have already told me about an assignment, tell me about another one. Always be very detailed and don't refrain from using technical terms. Do not make up assignments, use only content from my assignments in the /kb/Mathematics_For_ML/ folder. Describe methodologies, reasoning and insights gained."
               class="px-3 py-1.5 text-xs border border-neutral-800 rounded-lg hover:border-amber-500 hover:text-amber-400">
-        Key Projects in AI
+        Mathematics for ML
       </button>
-      <button data-q="What are the main skills you bring to the table as an AI/ML practitioner and RLHF specialist?"
+      <button data-q="Tell me in detail about your experience working with Python on Data Science projects. If you have already told me about a project, tell me about another one. Always be very detailed and don't refrain from using technical terms. Do not make up projects, use only content from my projects in the /kb/Python_Courses_1/ folder. Describe methodologies, reasoning and insights gained. If you have discussed all courses from that folder, proceed to /kb/Python_Courses_2/ folder."
               class="px-3 py-1.5 text-xs border border-neutral-800 rounded-lg hover:border-amber-500 hover:text-amber-400">
-        Main Skills
+        Python Skills
       </button>
     </div>
 
@@ -117,6 +126,11 @@
 
   <footer class="py-8 border-t border-neutral-800 text-center text-xs text-neutral-500">© <span id="year"></span> Panagiotis Paltsokas</footer>
 
+  <div id="toast-guy">
+    <img src="/static/toasty.png" alt="Toasty!" class="w-full">
+  </div>
+  <audio id="toast-audio" src="/static/toasty.mp3" preload="auto"></audio>
+
   <!-- Contact Modal -->
   <div id="contact-modal" class="fixed inset-0 z-50 hidden">
     <div class="absolute inset-0 bg-black/70" data-close></div>
@@ -149,6 +163,8 @@
     const input = document.getElementById('message');
     const transcript = document.getElementById('transcript');
     const clearBtn = document.getElementById('clear-chat');
+    const toastGuy = document.getElementById('toast-guy');
+    const toastAudio = document.getElementById('toast-audio');
 
     // Local history helpers
     const STORAGE_KEY = 'panos_chat_history_v1';
@@ -283,6 +299,18 @@
       scrollToBottom();
     }
 
+    function showToasty(){
+      if (!toastGuy) return;
+      toastGuy.style.bottom = '20px';
+      if (toastAudio) {
+        toastAudio.currentTime = 0;
+        toastAudio.play().catch(() => {});
+      }
+      setTimeout(() => {
+        toastGuy.style.bottom = '-180px';
+      }, 1100);
+    }
+
     // Load history oldest -> newest
     loadHistory().forEach(({role, text, time}) => {
       transcript.appendChild(card(role, text, time));
@@ -301,10 +329,17 @@
       input.disabled = true;
 
       try {
+        const historyPayload = loadHistory()
+          .slice(-10)
+          .map(({ role, text }) => ({
+            role: role === 'assistant' ? 'assistant' : 'user',
+            content: text
+          }));
+
         const res = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg })
+          body: JSON.stringify({ message: msg, history: historyPayload })
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
@@ -351,6 +386,7 @@
       if (!confirm('Clear the chat history on this device?')) return;
       localStorage.removeItem(STORAGE_KEY);
       transcript.innerHTML = '';
+      showToasty();
     });
 
     // Contact modal (mailto)

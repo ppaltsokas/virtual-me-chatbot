@@ -1,41 +1,11 @@
 from dotenv import load_dotenv
 from openai import OpenAI
-import json, os, requests, sqlite3, re
+import json, os, random, requests, sqlite3, re
 from pypdf import PdfReader
 import gradio as gr
 import faiss, numpy as np
 from glob import glob
 from pathlib import Path
-import shutil
-from datetime import datetime
-# Configure poppler path for pdf2image
-POPPLER_PATH = None
-# Try to find poppler in common locations
-possible_poppler_paths = [
-    r"F:\AI-Agents-Course-Ed\agents\1_foundations\career_conversations\poppler-25.07.0\Library\bin",
-    os.path.join(os.path.dirname(__file__), "poppler-25.07.0", "Library", "bin"),
-    os.path.join(os.getcwd(), "poppler-25.07.0", "Library", "bin"),
-    "C:\\poppler\\bin",  # Common Windows installation
-    os.path.join(os.environ.get("PROGRAMFILES", ""), "poppler", "bin"),
-]
-
-for path in possible_poppler_paths:
-    if path and os.path.exists(path):
-        POPPLER_PATH = path
-        print(f"[INFO] Found poppler at: {POPPLER_PATH}", flush=True)
-        break
-
-if POPPLER_PATH:
-    # Add poppler to PATH for this session
-    os.environ["PATH"] = POPPLER_PATH + os.pathsep + os.environ.get("PATH", "")
-
-try:
-    from pdf2image import convert_from_path
-    PDF2IMAGE_AVAILABLE = True
-    print(f"[INFO] pdf2image is available. Poppler path: {POPPLER_PATH}", flush=True)
-except ImportError:
-    PDF2IMAGE_AVAILABLE = False
-    print("Warning: pdf2image not available. Install with: pip install pdf2image. Also install poppler: https://github.com/oschwartz10612/poppler-windows/releases/")
 # ---------- FastAPI ----------
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
@@ -44,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv(override=True)
 
 # --- NEW HELPERS for non-md sources ---------------------------------
-from typing import Iterable
+from typing import Iterable, Optional, Sequence, Tuple
 try:
     import nbformat  # for .ipynb
 except Exception:
@@ -106,6 +76,69 @@ def iter_kb_files() -> Iterable[str]:
                     seen_files.add(fp_abs)
                     yield fp
 
+ASSIGNMENT_KEYWORDS = ("assignment", "project", "hw", "dama", "paltsokas")
+ASSIGNMENT_EXTS = (".pdf", ".md", ".txt", ".ipynb", ".r", ".rmd")
+
+def _looks_like_assignment(path: str) -> bool:
+    low = path.lower()
+    if not low.endswith(ASSIGNMENT_EXTS):
+        return False
+    return any(keyword in low for keyword in ASSIGNMENT_KEYWORDS)
+
+def _relative_to_kb(fp: str) -> str:
+    return os.path.relpath(fp, KB_DIR).replace("\\", "/")
+
+def _filter_candidates_by_folder(
+    candidates: Sequence[str],
+    folder: str,
+    allowed_exts: Optional[Sequence[str]],
+) -> list[str]:
+    norm = folder.strip().strip("/").replace("\\", "/")
+    exts = tuple(e.lower() for e in allowed_exts) if allowed_exts else None
+    out = []
+    for fp in candidates:
+        rel = _relative_to_kb(fp)
+        if norm and not rel.startswith(norm):
+            continue
+        if exts and not fp.lower().endswith(exts):
+            continue
+        out.append(fp)
+    return out
+
+def select_random_assignment(
+    folder_filters: Optional[Sequence[str]] = None,
+    allowed_exts: Optional[Sequence[str]] = None,
+) -> Optional[Tuple[str, str]]:
+    """Pick a random assignment-like file from the KB. Returns (display_name, relative_path)."""
+    all_files = list(iter_kb_files())
+    if not all_files:
+        return None
+
+    candidates: list[str] = []
+    if folder_filters:
+        for folder in folder_filters:
+            candidates = _filter_candidates_by_folder(all_files, folder, allowed_exts)
+            if candidates:
+                break
+    else:
+        exts = tuple(e.lower() for e in allowed_exts) if allowed_exts else None
+        candidates = [
+            fp for fp in all_files
+            if _looks_like_assignment(fp)
+            and (not exts or fp.lower().endswith(exts))
+        ]
+
+    if not candidates:
+        return None
+
+    chosen = random.choice(candidates)
+    rel_path = _relative_to_kb(chosen)
+    raw_title = Path(chosen).stem
+    display_name = re.sub(r"[_\\-]+", " ", raw_title).strip()
+    if not display_name:
+        display_name = rel_path
+    return display_name, rel_path
+
 def read_any_to_text(fp: str) -> str:
     low = fp.lower()
     if low.endswith(".pdf"):
@@ -115,116 +148,21 @@ def read_any_to_text(fp: str) -> str:
     # .md, .txt, .r, .rmd, .py → plain text
     return read_plain_text(fp)
 
-# Directory where assignment images will be saved
-assignment_images_directory = "screenshots/assignment_images/"
-
-# Ensure the directory exists
-os.makedirs(assignment_images_directory, exist_ok=True)
-
-def get_relevant_assignment_files(query: str, max_files: int = 3):
-    """Find relevant assignment files from the KB based on the query."""
-    # Search the KB for relevant content with more results
-    context = rag_search(query, k=12)  # Increased from 8 to 12
-    print(f"[DEBUG] RAG context: {context[:300]}...", flush=True)
-    
-    # Extract file sources from context
-    file_sources = set()
-    for line in context.split('\n'):
-        if line.startswith('[') and ']' in line:
-            # Extract file path from [source] format
-            source = line.split(']')[0].strip('[')
-            file_sources.add(source)
-    
-    print(f"[DEBUG] Found file sources from RAG: {file_sources}", flush=True)
-    
-    # Find actual PDF files in kb directory
-    pdf_files = []
-    kb_base = "kb"  # Base directory for kb folder
-    
-    for file_source in list(file_sources)[:max_files * 2]:  # Check more sources
-        # Try to find the file in kb directory
-        possible_paths = [
-            os.path.join(kb_base, file_source),
-            os.path.join(kb_base, os.path.basename(file_source)),
-            file_source,  # Try direct path
-        ]
-        for path in possible_paths:
-            if os.path.exists(path) and path.lower().endswith('.pdf'):
-                pdf_files.append(path)
-                print(f"[DEBUG] Found PDF from RAG: {path}", flush=True)
-                break
-    
-    # If no specific files found, get ALL assignment PDFs and prioritize them
-    if not pdf_files:
-        print(f"[DEBUG] No PDFs found from RAG, using fallback - searching all KB files...", flush=True)
-        all_pdfs = list([f for f in iter_kb_files() if f.lower().endswith('.pdf')])
-        print(f"[DEBUG] Total PDFs found in KB: {len(all_pdfs)}", flush=True)
-        
-        if all_pdfs:
-            # Prioritize assignment/homework PDFs
-            assignment_pdfs = [f for f in all_pdfs if any(keyword in f.lower() for keyword in ['hw', 'assignment', 'project', 'paltsokas', 'dama'])]
-            if assignment_pdfs:
-                pdf_files = assignment_pdfs[:max_files]
-                print(f"[DEBUG] Using prioritized assignment PDFs: {pdf_files}", flush=True)
-            else:
-                # Fallback to any PDFs
-                pdf_files = all_pdfs[:max_files]
-                print(f"[DEBUG] Using fallback PDFs: {pdf_files}", flush=True)
-        else:
-            print(f"[WARNING] No PDFs found in KB directory at all!", flush=True)
-    
-    return pdf_files
-
-def pdf_page_to_image(pdf_path: str, page_num: int = 0, max_pages: int = 3):
-    """Convert PDF pages to images. Returns list of image file paths."""
-    if not PDF2IMAGE_AVAILABLE:
-        print(f"[DEBUG] pdf2image not available. Install it to enable screenshots.", flush=True)
-        return []
-    
-    if not os.path.exists(pdf_path):
-        print(f"[DEBUG] PDF file not found: {pdf_path}", flush=True)
-        return []
-    
-    try:
-        # Get total pages first
-        reader = PdfReader(pdf_path)
-        total_pages = len(reader.pages)
-        print(f"[DEBUG] Converting PDF {pdf_path} (total pages: {total_pages})", flush=True)
-        
-        # Convert first few pages to images
-        last_page = min(page_num + max_pages, total_pages)
-        
-        # Use poppler_path if available
-        convert_kwargs = {
-            "first_page": page_num + 1,
-            "last_page": last_page,
-            "dpi": 150  # Good quality but not too large
-        }
-        
-        if POPPLER_PATH:
-            convert_kwargs["poppler_path"] = POPPLER_PATH
-        
-        images = convert_from_path(pdf_path, **convert_kwargs)
-        
-        image_paths = []
-        pdf_name = Path(pdf_path).stem
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
-        for i, image in enumerate(images):
-            image_path = os.path.join(
-                assignment_images_directory,
-                f"{pdf_name}_page_{page_num + i + 1}_{timestamp}.png"
-            )
-            image.save(image_path, 'PNG')
-            image_paths.append(image_path)
-            print(f"[DEBUG] Created image: {image_path}", flush=True)
-        
-        return image_paths
-    except Exception as e:
-        import traceback
-        print(f"[ERROR] Error converting PDF {pdf_path} to images: {e}", flush=True)
-        print(f"[ERROR] Traceback: {traceback.format_exc()}", flush=True)
-        return []
+def load_assignment_context(rel_path: str, max_chars: int = 4000) -> Optional[str]:
+    abs_path = os.path.join(KB_DIR, rel_path)
+    if not os.path.exists(abs_path):
+        print(f"[WARNING] Assignment context path not found: {abs_path}", flush=True)
+        return None
+    raw = read_any_to_text(abs_path)
+    if not raw:
+        print(f"[WARNING] No extractable text for assignment: {abs_path}", flush=True)
+        return None
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars]
+    return cleaned
 
 # --------------------------------------------------------------------
 
@@ -262,12 +200,32 @@ def push(text):
         # non-fatal for local dev
         pass
 
+EMAIL_ADDRESS_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+EMAIL_KEYWORDS = ("email", "e-mail", "mail you", "reach you", "contact you")
+POLICY_KEYWORDS = (
+    "kill", "bomb", "explosive", "shoot", "weapon",
+    "abuse", "hate crime", "self harm", "suicide",
+    "explicit sexual", "child abuse", "terrorist",
+    "hack", "malware", "ddos"
+)
+
+def _needs_pushover_alert(text: str) -> bool:
+    low = (text or "").lower()
+    if EMAIL_ADDRESS_RE.search(text or ""):
+        return True
+    if any(keyword in low for keyword in EMAIL_KEYWORDS):
+        return True
+    if any(keyword in low for keyword in POLICY_KEYWORDS):
+        return True
+    return False
+
 def record_user_details(email, name="Name not provided", notes="not provided"):
     push(f"Recording {name} with email {email} and notes {notes}")
     return {"recorded": "ok"}
 
 def record_unknown_question(question):
-    push(f"Recording {question}")
+    if _needs_pushover_alert(question):
+        push(f"Recording {question}")
     return {"recorded": "ok"}
 
 record_user_details_json = {
@@ -647,11 +605,6 @@ class Me:
             "- After drafting a concise answer, call `qadb_upsert_tool` to save it (tags: 'virtual-me').\n"
             "- If you still cannot answer after searching the KB, call `record_unknown_question`.\n"
             "- If the user is a potential lead, ask for an email and call `record_user_details`.\n"
-            "\n# Screenshot Capability\n"
-            "- **IMPORTANT**: When users ask about projects or assignments, or explicitly request screenshots/images, "
-            "the system will automatically provide screenshots from relevant assignment PDFs stored in the /kb folder. "
-            "You should acknowledge this capability and let users know that screenshots will be included with your detailed response. "
-            "Always be positive and helpful when users ask about screenshots - tell them that you can provide screenshots from your assignments."
         )
         summary = f"\n\n## Summary:\n{self.summary}\n"
         linkedin = f"\n## LinkedIn Profile:\n{self.linkedin}\n"
@@ -701,72 +654,6 @@ class Me:
             pass
 
         return final
-    
-    def chat_with_images(self, message, history):
-        """Chat function that can return both text and images for assignment questions."""
-        # Check if this is an assignment/project question - make detection more robust
-        message_lower = message.lower()
-        is_assignment_question = (
-            "tell me in detail about a project or assignment" in message_lower or
-            "tell me in detail about a project" in message_lower or
-            ("project" in message_lower and "assignment" in message_lower) or
-            ("assignment" in message_lower and ("detail" in message_lower or "tell me" in message_lower)) or
-            "screenshot" in message_lower or
-            ("provide" in message_lower and "image" in message_lower)
-        )
-        
-        print(f"[DEBUG] Is assignment question: {is_assignment_question}, message: {message[:100]}...", flush=True)
-        
-        # Get the text response
-        text_response = self.chat(message, history)
-        
-        # If it's an assignment question or explicitly asking for screenshots, also include images
-        if is_assignment_question:
-            print(f"[DEBUG] Attempting to get assignment images...", flush=True)
-            try:
-                # Find relevant assignment files
-                relevant_files = get_relevant_assignment_files(message, max_files=2)
-                print(f"[DEBUG] Found {len(relevant_files)} relevant PDF files", flush=True)
-                
-                # Convert PDF pages to images
-                all_image_paths = []
-                for pdf_file in relevant_files:
-                    print(f"[DEBUG] Processing PDF: {pdf_file}", flush=True)
-                    image_paths = pdf_page_to_image(pdf_file, page_num=0, max_pages=2)
-                    print(f"[DEBUG] Created {len(image_paths)} images from {pdf_file}", flush=True)
-                    all_image_paths.extend(image_paths)
-                
-                print(f"[DEBUG] Total images created: {len(all_image_paths)}", flush=True)
-                
-                # Return both text and images
-                if all_image_paths:
-                    print(f"[DEBUG] Returning {len(all_image_paths)} images with response", flush=True)
-                    # For Gradio ChatInterface with type="messages", we need to return a message dict
-                    # that includes both content and file paths
-                    return {
-                        "role": "assistant",
-                        "content": text_response,
-                        "files": all_image_paths
-                    }
-                else:
-                    print(f"[DEBUG] No images were created. Returning text only.", flush=True)
-                    # Only add note if images were actually requested but failed
-                    if "screenshot" in message_lower or ("provide" in message_lower and "image" in message_lower):
-                        # Check if pdf2image is available
-                        if not PDF2IMAGE_AVAILABLE:
-                            text_response += "\n\nNote: Screenshot functionality requires pdf2image and poppler to be installed."
-                        elif not POPPLER_PATH:
-                            text_response += "\n\nNote: Screenshot functionality requires poppler to be installed and configured."
-                        else:
-                            text_response += "\n\nNote: I attempted to provide screenshots but couldn't find relevant assignment files. The images should appear automatically when discussing specific assignments."
-                    return text_response
-            except Exception as e:
-                import traceback
-                print(f"[ERROR] Error getting assignment images: {e}", flush=True)
-                print(f"[ERROR] Traceback: {traceback.format_exc()}", flush=True)
-                return text_response
-        
-        return text_response
 
 # =========================
 # Build Gradio app for both local & Spaces
@@ -785,140 +672,7 @@ def build_demo():
 
     return gr.ChatInterface(me.chat, type="messages")
 
-# Build (or reuse) your Gradio app
-def build_demo_with_images():
-    """Build Gradio demo that supports images in chat responses."""
-    me = Me()
-    set_client(me.openai)
-
-    # Build FAISS KB once (or rebuild if empty)
-    try:
-        n = rebuild_if_empty()
-        if n == 0:
-            print("WARNING: KB has 0 chunks. Check files in 'kb/'", flush=True)
-    except Exception as e:
-        print("KB build skipped / failed:", e, flush=True)
-
-    def chat_wrapper(message, history):
-        """Wrapper to handle both text and image responses."""
-        print(f"[DEBUG] chat_wrapper called with message: {message[:50]}...", flush=True)
-        result = me.chat_with_images(message, history)
-        print(f"[DEBUG] chat_wrapper received result type: {type(result)}, is dict: {isinstance(result, dict)}", flush=True)
-        
-        if isinstance(result, dict):
-            print(f"[DEBUG] Result dict keys: {result.keys()}", flush=True)
-        
-        # If result is a dict with files, format it for Gradio
-        if isinstance(result, dict) and "files" in result:
-            response_content = result["content"]
-            files = result.get("files", [])
-            
-            # For Gradio ChatInterface, we need to return images differently
-            # Gradio ChatInterface with type="messages" supports file paths in the response
-            if files:
-                # Remove the misleading note about pdf2image/poppler if images were created
-                if "Please ensure pdf2image and poppler are installed" in response_content:
-                    response_content = response_content.replace(
-                        "\n\nNote: I attempted to provide screenshots from your assignments, but encountered an issue. Please ensure pdf2image and poppler are installed.",
-                        ""
-                    )
-                
-                # For Gradio, we can return a tuple with (content, files) or embed images
-                # Since ChatInterface expects a string, we'll embed them as markdown
-                # But first, let's try using Gradio's file component approach
-                # Actually, for ChatInterface type="messages", we should return a dict
-                
-                # Use base64 encoding to embed images directly - this is the most reliable way
-                # Gradio ChatInterface supports base64-encoded images in HTML
-                print(f"[DEBUG] chat_wrapper: Formatting response with {len(files)} images using base64 encoding", flush=True)
-                print(f"[DEBUG] chat_wrapper: Files to encode: {[os.path.basename(f) for f in files[:5]]}", flush=True)
-                
-                try:
-                    from PIL import Image
-                    import base64
-                    from io import BytesIO
-                    
-                    image_section = "\n\n## 📎 Relevant Assignment Pages:\n\n"
-                    
-                    for i, img_path in enumerate(files[:5], 1):  # Limit to 5 images
-                        if os.path.exists(img_path):
-                            filename = os.path.basename(img_path)
-                            print(f"[DEBUG] Encoding image {i}: {filename}", flush=True)
-                            
-                            try:
-                                # Open and encode image as base64
-                                with Image.open(img_path) as img:
-                                    # Convert to RGB if necessary (handle RGBA, etc.)
-                                    if img.mode in ('RGBA', 'LA', 'P'):
-                                        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-                                        if img.mode == 'P':
-                                            img = img.convert('RGBA')
-                                        rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                                        img = rgb_img
-                                    
-                                    # Resize if too large (max 1200px width for better performance)
-                                    max_width = 1200
-                                    if img.width > max_width:
-                                        ratio = max_width / img.width
-                                        new_height = int(img.height * ratio)
-                                        img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
-                                    
-                                    # Convert to base64
-                                    buffered = BytesIO()
-                                    img.save(buffered, format="PNG")
-                                    img_str = base64.b64encode(buffered.getvalue()).decode()
-                                    
-                                    # Use Markdown image syntax with base64 - Gradio ChatInterface supports this
-                                    # Markdown: ![alt](data:image/png;base64,{base64_string})
-                                    image_section += f"![Assignment page {i}](data:image/png;base64,{img_str})\n\n"
-                                    print(f"[DEBUG] Successfully encoded image {i} using Markdown syntax", flush=True)
-                            except Exception as e:
-                                print(f"[ERROR] Failed to encode image {img_path}: {e}", flush=True)
-                                import traceback
-                                traceback.print_exc()
-                                # Fallback to file path
-                                filename = os.path.basename(img_path)
-                                image_url = f"/assignment_images/{filename}"
-                                image_section += f'<img src="{image_url}" alt="Assignment page {i}" style="max-width: 100%; height: auto; margin: 10px 0;" />\n\n'
-                        else:
-                            print(f"[WARNING] Image file does not exist: {img_path}", flush=True)
-                    
-                    print(f"[DEBUG] Returning response with {len(files)} embedded base64 images", flush=True)
-                    print(f"[DEBUG] Response length: {len(response_content + image_section)} characters", flush=True)
-                    print(f"[DEBUG] Image section contains: {len(image_section)} characters", flush=True)
-                    # Verify base64 encoding worked
-                    if "data:image/png;base64," in image_section:
-                        print(f"[DEBUG] ✓ Base64 images confirmed in response (Markdown format)", flush=True)
-                        # Show a sample of the first 100 chars of base64 to verify
-                        if "![Assignment page" in image_section:
-                            print(f"[DEBUG] ✓ Markdown image syntax confirmed", flush=True)
-                    else:
-                        print(f"[WARNING] ✗ No base64 images found in response!", flush=True)
-                    return response_content + image_section
-                    
-                except ImportError:
-                    print(f"[WARNING] PIL not available, using file paths instead", flush=True)
-                    # Fallback to file paths if base64 encoding fails
-                    image_section = "\n\n## 📎 Relevant Assignment Pages:\n\n"
-                    for i, img_path in enumerate(files[:5], 1):
-                        if os.path.exists(img_path):
-                            filename = os.path.basename(img_path)
-                            image_url = f"/assignment_images/{filename}"
-                            image_section += f'<img src="{image_url}" alt="Assignment page {i}" style="max-width: 100%; height: auto; margin: 10px 0;" />\n\n'
-                    return response_content + image_section
-            else:
-                return response_content
-        else:
-            print(f"[DEBUG] Returning result as-is (not a dict with files)", flush=True)
-            return result
-    
-    # Enable HTML rendering in Gradio ChatInterface
-    # Note: Gradio ChatInterface should support HTML by default, but let's make sure
-    interface = gr.ChatInterface(chat_wrapper, type="messages")
-    print(f"[INFO] Gradio ChatInterface created with chat_wrapper", flush=True)
-    return interface
-
-demo = build_demo_with_images()
+demo = build_demo()
 
 # Create ONE shared Me() instance for the /chat endpoint
 _shared_me = Me()
@@ -938,13 +692,6 @@ gr.mount_gradio_app(app, demo, path="/gradio")
 # Serve your single-file website at /
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Serve assignment images so Gradio can display them
-# Make sure the directory exists and is accessible
-assignment_images_abs = os.path.abspath(assignment_images_directory)
-os.makedirs(assignment_images_abs, exist_ok=True)
-app.mount("/assignment_images", StaticFiles(directory=assignment_images_abs), name="assignment_images")
-print(f"[INFO] Assignment images will be served from: {assignment_images_abs}", flush=True)
-
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (static_dir / "index.html").read_text(encoding="utf-8")
@@ -954,86 +701,75 @@ def index():
 async def chat_api(payload: dict, request: Request):
     """
     Expects: {"message": "...", "history": [...]} (history is optional)
-    Returns: {"reply": "..."} or {"reply": "...", "images": [...]}
+    Returns: {"reply": "..."}
     """
     message = (payload or {}).get("message", "")
     history = (payload or {}).get("history", [])
     if not isinstance(history, list):
         history = []
     
+    augmented_message = message
+    folder_targets: Optional[Sequence[str]] = None
+    allowed_exts: Optional[Sequence[str]] = None
     try:
-        # Use chat_with_images to get both text and potentially images
-        result = _shared_me.chat_with_images(message, history)
-        print(f"[DEBUG] /chat endpoint: result type: {type(result)}, is dict: {isinstance(result, dict)}", flush=True)
-        
-        # If result is a dict with files, format it like chat_wrapper does
-        if isinstance(result, dict) and "files" in result:
-            response_content = result["content"]
-            files = result.get("files", [])
-            
-            print(f"[DEBUG] /chat endpoint: Formatting {len(files)} images", flush=True)
-            
-            # Format images the same way as chat_wrapper
-            if files:
-                try:
-                    from PIL import Image
-                    import base64
-                    from io import BytesIO
-                    
-                    image_section = "\n\n## 📎 Relevant Assignment Pages:\n\n"
-                    
-                    for i, img_path in enumerate(files[:5], 1):
-                        if os.path.exists(img_path):
-                            filename = os.path.basename(img_path)
-                            print(f"[DEBUG] /chat endpoint: Encoding image {i}: {filename}", flush=True)
-                            
-                            try:
-                                with Image.open(img_path) as img:
-                                    # Convert to RGB if necessary
-                                    if img.mode in ('RGBA', 'LA', 'P'):
-                                        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-                                        if img.mode == 'P':
-                                            img = img.convert('RGBA')
-                                        rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                                        img = rgb_img
-                                    
-                                    # Resize if too large
-                                    max_width = 1200
-                                    if img.width > max_width:
-                                        ratio = max_width / img.width
-                                        new_height = int(img.height * ratio)
-                                        img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
-                                    
-                                    # Convert to base64
-                                    buffered = BytesIO()
-                                    img.save(buffered, format="PNG")
-                                    img_str = base64.b64encode(buffered.getvalue()).decode()
-                                    
-                                    # Use Markdown image syntax with base64
-                                    image_section += f"![Assignment page {i}](data:image/png;base64,{img_str})\n\n"
-                                    print(f"[DEBUG] /chat endpoint: Successfully encoded image {i} using Markdown syntax", flush=True)
-                            except Exception as e:
-                                print(f"[ERROR] /chat endpoint: Failed to encode image {img_path}: {e}", flush=True)
-                                # Fallback
-                                filename = os.path.basename(img_path)
-                                image_url = f"/assignment_images/{filename}"
-                                image_section += f'<img src="{image_url}" alt="Assignment page {i}" style="max-width: 100%; height: auto; margin: 10px 0;" />\n\n'
-                        else:
-                            print(f"[WARNING] /chat endpoint: Image file does not exist: {img_path}", flush=True)
-                    
-                    reply = response_content + image_section
-                    print(f"[DEBUG] /chat endpoint: Returning reply with embedded images", flush=True)
-                    return JSONResponse({"reply": reply})
-                    
-                except ImportError:
-                    print(f"[WARNING] /chat endpoint: PIL not available, using file paths", flush=True)
-                    # Fallback
-                    reply = response_content
-                    return JSONResponse({"reply": reply, "images": files[:5]})
-            else:
-                reply = response_content
-        else:
-            reply = result if isinstance(result, str) else str(result)
+        normalized = (message or "").strip().lower()
+        if "/kb/end_to_end_ml_projects/" in normalized:
+            folder_targets = ["End_to_end_ML_projects"]
+            allowed_exts = [".pdf", ".ipynb"]
+        elif "/kb/ml_theory_practice/" in normalized:
+            folder_targets = ["ML_Theory_Practice"]
+            allowed_exts = [".pdf", ".ipynb", ".r"]
+        elif "/kb/mathematics_for_ml/" in normalized:
+            folder_targets = ["Mathematics_For_ML"]
+            allowed_exts = [".pdf", ".ipynb"]
+        elif "/kb/python_courses_1/" in normalized:
+            folder_targets = ["Python_Courses_1", "Python_Courses_2"]
+            allowed_exts = [".ipynb"]
+
+        if folder_targets:
+            selection = select_random_assignment(folder_targets, allowed_exts)
+            if selection:
+                display_name, rel_path = selection
+                context = load_assignment_context(rel_path)
+                repo_instruction = ""
+                if rel_path.startswith("Python_Courses_1/"):
+                    parts = rel_path.split("/", 1)
+                    if len(parts) == 2 and parts[1]:
+                        subfolder = parts[1].split("/", 1)[0]
+                        repo_url = f"https://github.com/ppaltsokas/{subfolder}"
+                        repo_instruction = (
+                            f" Also share and highlight the GitHub repository link for this project using a clickable Markdown link: [{subfolder}]({repo_url}). "
+                            "Encourage the user to review the code there."
+                        )
+                        print(f"[DEBUG] Repo link generated for Python project: {repo_url}", flush=True)
+                    else:
+                        print(f"[WARNING] Unable to derive repo link from path: {rel_path}", flush=True)
+
+                augmented_message = (
+                    f"{message}\n\n"
+                    f"(Please focus on the assignment stored in `{rel_path}` from the knowledge base. "
+                    f"This assignment is titled \"{display_name}\". "
+                    f"Use only the provided context and do not invent additional details."
+                    f"{repo_instruction})"
+                )
+                if context:
+                    augmented_message += (
+                        "\n\n"
+                        f"Context from `{rel_path}`:\n"
+                        "```"
+                        f"\n{context}\n"
+                        "```"
+                    )
+                else:
+                    print(f"[WARNING] No context extracted for {rel_path}", flush=True)
+                print(f"[DEBUG] Random assignment selected from {folder_targets}: {rel_path}", flush=True)
+    except Exception as e:
+        print(f"[WARNING] Failed to select random assignment: {e}", flush=True)
+        augmented_message = message
+    
+    try:
+        result = _shared_me.chat(augmented_message, history)
+        reply = result if isinstance(result, str) else str(result)
     except Exception as e:
         import traceback
         print(f"[ERROR] /chat endpoint error: {e}", flush=True)
