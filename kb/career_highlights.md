@@ -1,3 +1,0 @@
-- Rapid adoption of complex client policy on political content classification; praised by client.
-- Built AHT/FCR dashboards that supported operations decisions and quality improvements.
-- Solo pilot delivery for a math task → Thessaloniki site became exclusive delivery location.
