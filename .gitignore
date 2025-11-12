@@ -1,22 +1,78 @@
+# --- Python basics ---
 __pycache__/
 *.py[cod]
-.venv*/ 
-venv/
-.env*
-*.ipynb
-.ipynb_checkpoints/
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+htmlcov/
+.prof
+*.log
+
+# --- Virtual envs & tooling ---
+.venv/
+.envrc
+# dotenv & secrets 
+.env
+.env.*
+!.env.example
+
+# --- Editors / OS ---
 .vscode/
 .idea/
+*.code-workspace
 .DS_Store
 Thumbs.db
-data/
-models/
+
+# --- Notebooks & checkpoints ---
+.ipynb_checkpoints/
+*.ipynb
+
+# --- Build / dist ---
+build/
+dist/
+*.spec
+
+# --- App/runtime artifacts ---
 logs/
-*.sqlite
 *.db
-*.log
-community_contributions/
-scripts/
-requirements-chatbot.txt
-poppler-25.07.0/
+*.sqlite
+*.sqlite3
+*.pid
+
+# --- Project-specific  ---
+# Knowledge base & derived indexes
+kb/
+models/
+models.faiss/
+models/*/
+models/faiss/
+**/*.faiss
+**/*.index
+**/store.json
+
+# Poppler 
+poppler-*/
+poppler*/
+
+# Screenshots & large media
 screenshots/
+**/*.mp4
+**/*.wav
+**/*.webm
+**/*.zip
+
+# Hugging Face / HF cache & transformers cache
+.huggingface/
+cache/
+transformers_cache/
+datasets/
+~$*
+
+# Node/Front-end
+node_modules/
+*.lock
